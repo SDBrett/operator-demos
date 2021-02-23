@@ -1,0 +1,10 @@
+apiVersion: v1
+data:
+  index.html: |-
+    <body>
+        <h1 style="color: green;">GREEN</h1>
+    </body>
+kind: ConfigMap
+metadata:
+  name: homepage
+  namespace: demo-one
