@@ -112,8 +112,7 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
 	}
-	found.Reset()
-	ctrl.
+
 	// Ensure the deployment size is the same as the spec
 	size := demoone.Spec.Replicas
 	if *found.Spec.Replicas != size {
