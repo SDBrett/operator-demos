@@ -42,6 +42,11 @@ type DemoOneReconciler struct {
 // +kubebuilder:rbac:groups=demos.sdbrett.com,resources=demoones,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=demos.sdbrett.com,resources=demoones/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=demos.sdbrett.com,resources=demoones/finalizers,verbs=update
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -54,7 +59,7 @@ type DemoOneReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
-	configMapUpdate := false
+	deploymentChanged := false
 	log := r.Log.WithValues("demoone", req.NamespacedName)
 	demoone := &demosv1alpha1.DemoOne{}
 
@@ -78,7 +83,7 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(err, "Failed to create new ConfigMap", "ConfigMap.Namespace", cm.Namespace, "ConfigMap.Name", cm.Name)
 			return ctrl.Result{}, err
 		}
-		configMapUpdate = true
+		return ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get ConfigMap")
 		return ctrl.Result{}, err
@@ -92,13 +97,14 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(err, "Failed to update ConfigMap", "ConfigMap.Namespace", cmfound.Namespace, "Deployment.Name", cmfound.Name)
 			return ctrl.Result{}, err
 		}
-		configMapUpdate = true
 	}
+
+	cmCurrentRevisionVersion := cmfound.ResourceVersion
 
 	found := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: demoone.Name, Namespace: demoone.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		dep := r.deploymentForDemoOne(demoone)
+		dep := r.deploymentForDemoOne(demoone, cmCurrentRevisionVersion)
 
 		log.Info("Creating a new Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 		err = r.Create(ctx, dep)
@@ -117,14 +123,21 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	size := demoone.Spec.Replicas
 	if *found.Spec.Replicas != size {
 		found.Spec.Replicas = &size
+		deploymentChanged = true
+	}
+
+	if found.Spec.Template.Annotations["cmRevisionVersion"] != cmCurrentRevisionVersion {
+		found.Spec.Template.Annotations["cmRevisionVersion"] = cmCurrentRevisionVersion
+		deploymentChanged = true
+	}
+
+	if deploymentChanged {
 		err = r.Update(ctx, found)
 		if err != nil {
 			log.Error(err, "Failed to update Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 			return ctrl.Result{}, err
 		}
-		if configMapUpdate {
 
-		}
 		// Spec updated - return and requeue
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -155,10 +168,10 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne) *appsv1.Deployment {
+func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne, cmCurrentRevisionVersion string) *appsv1.Deployment {
 	ls := labelsForDemoOne(m.Name)
 	replicas := m.Spec.Replicas
-
+	annotations := annotationsForDemoOne(cmCurrentRevisionVersion)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name,
@@ -171,7 +184,8 @@ func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne) *apps
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels:      ls,
+					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
@@ -210,6 +224,10 @@ func (r *DemoOneReconciler) configMapForDemoOne(m *demosv1alpha1.DemoOne) *corev
 // belonging to the given demoone CR name.
 func labelsForDemoOne(name string) map[string]string {
 	return map[string]string{"app": "demoone", "demoone_cr": name}
+}
+
+func annotationsForDemoOne(cmCurrentRevisionVersion string) map[string]string {
+	return map[string]string{"cmRevisionVersion": cmCurrentRevisionVersion}
 }
 
 // getPodNames returns the pod names of the array of pods passed in

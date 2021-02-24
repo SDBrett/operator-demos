@@ -29,7 +29,6 @@ type DemoOneSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of DemoOne. Edit DemoOne_types.go to remove/update
-	Name     string `json:"name"`
 	Colour   string `json:"colour"`
 	Replicas int32  `json:"replicas"`
 }

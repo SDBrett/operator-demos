@@ -1,0 +1,73 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: demoones.demos.sdbrett.com
+spec:
+  group: demos.sdbrett.com
+  names:
+    kind: DemoOne
+    listKind: DemoOneList
+    plural: demoones
+    singular: demoone
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DemoOne is the Schema for the demoones API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DemoOneSpec defines the desired state of DemoOne
+            properties:
+              colour:
+                description: Foo is an example field of DemoOne. Edit DemoOne_types.go
+                  to remove/update
+                type: string
+              replicas:
+                format: int32
+                type: integer
+            required:
+            - colour
+            - replicas
+            type: object
+          status:
+            description: DemoOneStatus defines the observed state of DemoOne
+            properties:
+              nodes:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file'
+                items:
+                  type: string
+                type: array
+            required:
+            - nodes
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -1,0 +1,7 @@
+apiVersion: demos.sdbrett.com/v1alpha1
+kind: DemoOne
+metadata:
+  name: test
+spec:
+  replicas: 2
+  colour: blue
