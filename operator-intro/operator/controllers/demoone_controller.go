@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -91,12 +92,14 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	cmData := dataForConfigMap(demoone.Spec.Colour)
 	if !reflect.DeepEqual(cmfound.Data, cmData) {
+		log.Info("Updating Config map", "ConfigMap.Namespace", cmfound.Namespace, "ConfigMap.Name", cmfound.Name)
 		cmfound.Data = cmData
 		err = r.Update(ctx, cmfound)
 		if err != nil {
-			log.Error(err, "Failed to update ConfigMap", "ConfigMap.Namespace", cmfound.Namespace, "Deployment.Name", cmfound.Name)
+			log.Error(err, "Failed to update ConfigMap", "ConfigMap.Namespace", cmfound.Namespace, "ConfigMap.Name", cmfound.Name)
 			return ctrl.Result{}, err
 		}
+
 	}
 
 	cmCurrentRevisionVersion := cmfound.ResourceVersion
@@ -165,6 +168,36 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	svcfound := &corev1.Service{}
+
+	err = r.Get(ctx, types.NamespacedName{Name: demoone.Name, Namespace: demoone.Namespace}, svcfound)
+	if err != nil && errors.IsNotFound(err) {
+		svc := r.serviceForDemoOne(demoone)
+
+		log.Info("Creating a new Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+		err = r.Create(ctx, svc)
+
+		if err != nil {
+			log.Error(err, "Failed to create new Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get ConfigMap")
+		return ctrl.Result{}, err
+	}
+
+	if !reflect.DeepEqual(svcfound.Spec.Selector, labelsForDemoOne(demoone.Name)) {
+		log.Info("Updating Service map", "Service.Namespace", svcfound.Namespace, "Service.Name", svcfound.Name)
+		svcfound.Spec.Selector = labelsForDemoOne(demoone.Name)
+		err = r.Update(ctx, svcfound)
+		if err != nil {
+			log.Error(err, "Failed to update ConfigMap", "Service.Namespace", svcfound.Namespace, "Service.Name", svcfound.Name)
+			return ctrl.Result{}, err
+		}
+
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -193,7 +226,7 @@ func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne, cmCur
 						Name:  "demoone",
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 80,
-							Name:          "demoone",
+							Name:          "http",
 						}},
 					}},
 				},
@@ -203,6 +236,29 @@ func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne, cmCur
 	// Set DemoOne instance as the owner and controller
 	ctrl.SetControllerReference(m, dep, r.Scheme)
 	return dep
+}
+
+func (r *DemoOneReconciler) serviceForDemoOne(m *demosv1alpha1.DemoOne) *corev1.Service {
+	ls := labelsForDemoOne(m.Name)
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      m.Name,
+			Namespace: m.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: ls,
+			Ports: []corev1.ServicePort{{
+				Name:       "http",
+				Protocol:   "TCP",
+				Port:       80,
+				TargetPort: intstr.FromString("http"),
+			}},
+		},
+	}
+	// Set DemoOne instance as the owner and controller
+	ctrl.SetControllerReference(m, svc, r.Scheme)
+	return svc
 }
 
 func (r *DemoOneReconciler) configMapForDemoOne(m *demosv1alpha1.DemoOne) *corev1.ConfigMap {
