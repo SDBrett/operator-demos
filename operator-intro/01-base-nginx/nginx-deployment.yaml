@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: demo-one
+  #namespace: demo-one
   name: nginx
 spec:
   replicas: 3
@@ -27,7 +27,7 @@ spec:
       volumes:
         - name: html
           configMap:
-            name: homepage
+            name: test
 ---
 apiVersion: v1
 kind: Service

@@ -31,7 +31,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+const demooneFinalizer = "demos.sdbrett.com/finalizer"
 
 // DemoOneReconciler reconciles a DemoOne object
 type DemoOneReconciler struct {
@@ -72,6 +75,39 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	// Check if the Demoone instance is marked to be deleted, which is
+	// indicated by the deletion timestamp being set.
+	isDemooneMarkedToBeDeleted := demoone.GetDeletionTimestamp() != nil
+	if isDemooneMarkedToBeDeleted {
+		if controllerutil.ContainsFinalizer(demoone, demooneFinalizer) {
+			// Run finalization logic for demooneFinalizer. If the
+			// finalization logic fails, don't remove the finalizer so
+			// that we can retry during the next reconciliation.
+			if err := r.finalizeDemoone(log, demoone); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			// Remove demooneFinalizer. Once all finalizers have been
+			// removed, the object will be deleted.
+			controllerutil.RemoveFinalizer(demoone, demooneFinalizer)
+			err := r.Update(ctx, demoone)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer for this CR
+	if !controllerutil.ContainsFinalizer(demoone, demooneFinalizer) {
+		controllerutil.AddFinalizer(demoone, demooneFinalizer)
+		err = r.Update(ctx, demoone)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Config Map
 	cmfound := &corev1.ConfigMap{}
 	err = r.Get(ctx, types.NamespacedName{Name: demoone.Name, Namespace: demoone.Namespace}, cmfound)
 	if err != nil && errors.IsNotFound(err) {
@@ -104,6 +140,7 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	cmCurrentRevisionVersion := cmfound.ResourceVersion
 
+	// Deployment
 	found := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: demoone.Name, Namespace: demoone.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
@@ -168,8 +205,8 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	// Service
 	svcfound := &corev1.Service{}
-
 	err = r.Get(ctx, types.NamespacedName{Name: demoone.Name, Namespace: demoone.Namespace}, svcfound)
 	if err != nil && errors.IsNotFound(err) {
 		svc := r.serviceForDemoOne(demoone)
@@ -203,6 +240,7 @@ func (r *DemoOneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne, cmCurrentRevisionVersion string) *appsv1.Deployment {
 	ls := labelsForDemoOne(m.Name)
+	// defaultMode := int32(644)
 	replicas := m.Spec.Replicas
 	annotations := annotationsForDemoOne(cmCurrentRevisionVersion)
 	dep := &appsv1.Deployment{
@@ -228,11 +266,28 @@ func (r *DemoOneReconciler) deploymentForDemoOne(m *demosv1alpha1.DemoOne, cmCur
 							ContainerPort: 80,
 							Name:          "http",
 						}},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "html",
+							MountPath: "/usr/share/nginx/html/index.html",
+							SubPath:   "index",
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: "html",
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								// DefaultMode: &defaultMode,
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: m.Name,
+								},
+							},
+						},
 					}},
 				},
 			},
 		},
 	}
+
 	// Set DemoOne instance as the owner and controller
 	ctrl.SetControllerReference(m, dep, r.Scheme)
 	return dep
@@ -274,6 +329,15 @@ func (r *DemoOneReconciler) configMapForDemoOne(m *demosv1alpha1.DemoOne) *corev
 	// Set DemoOne instance as the owner and controller
 	ctrl.SetControllerReference(m, cm, r.Scheme)
 	return cm
+}
+
+func (r *DemoOneReconciler) finalizeDemoone(reqLogger logr.Logger, m *demosv1alpha1.DemoOne) error {
+	// TODO(user): Add the cleanup steps that the operator
+	// needs to do before the CR can be deleted. Examples
+	// of finalizers include performing backups and deleting
+	// resources that are not owned by this CR, like a PVC.
+	reqLogger.Info("Successfully finalized memcached")
+	return nil
 }
 
 // labelsForDemoOne returns the labels for selecting the resources
