@@ -372,5 +372,8 @@ func dataForConfigMap(colour string) map[string]string {
 func (r *DemoOneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&demosv1alpha1.DemoOne{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
